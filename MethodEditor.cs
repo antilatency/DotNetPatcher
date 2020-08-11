@@ -7,6 +7,16 @@ using System.Text;
 
 namespace DotNetPatcher {
     public static class MethodEditor {
+
+        public static void SetEligibleForTieredCompilation(MethodInfo method) {
+            var desc = new MethodDesc(method.MethodHandle.Value);
+            var flags = desc.Fields.BaseFields.m_bFlags2;
+            flags |= (byte)MethodDesc.flag2.IsEligibleForTieredCompilation;
+            var f = desc.Fields;
+            f.BaseFields.m_bFlags2 = flags;
+            desc.Fields = f;
+        }
+
         public static IntPtr GetNativeCode(MethodInfo method) {
             var methodDesc = new MethodDesc(method.MethodHandle.Value);
             if (methodDesc.HasPrecode()) {
