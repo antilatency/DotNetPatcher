@@ -71,6 +71,47 @@ namespace DotNetPatcher {
 
         public MethodTable(IntPtr ptr) : base(ptr) { }
 
+        public IntPtr GetLoaderModule()
+        {
+            return Fields.m_pLoaderModule;
+        }
+
+        public bool HasModuleOverride() {
+            return GetFlag(WFLAGS2_ENUM.enum_flag_HasModuleOverride) == WFLAGS2_ENUM.enum_flag_HasModuleOverride;
+        }
+
+        public MethodTable GetCanonicalMethodTable()
+        {
+
+            var addr = Fields.m_pCanonMT;
+
+            if ((addr.ToInt64() & 2) == 0)
+                return this;
+
+#if FEATURE_PREJIT
+            if ((addr & 1) != 0)
+                return PTR_MethodTable(*PTR_TADDR(addr - 3));
+#else
+
+            return new MethodTable(addr - 2);
+#endif
+        }
+
+        public IntPtr GetModule() {
+
+
+            // Fast path for non-generic non-array case
+            if ((Fields.m_dwFlags & ((uint)WFLAGS_HIGH_ENUM.enum_flag_HasComponentSize | (uint)WFLAGS_LOW_ENUM.enum_flag_GenericsMask)) == 0)
+                return GetLoaderModule();
+
+            MethodTable pMTForModule = IsArray() ? this : GetCanonicalMethodTable();
+            if (!pMTForModule.HasModuleOverride())
+                return pMTForModule.GetLoaderModule();
+
+            var pSlot = pMTForModule.GetMultipurposeSlotPtr(WFLAGS2_ENUM.enum_flag_HasModuleOverride, c_ModuleOverrideOffsets);
+            return Marshal.ReadIntPtr(pSlot); // RelativeFixupPointer < PTR_Module >::GetValueAtPtr(pSlot);
+        }
+
         public WFLAGS_HIGH_ENUM GetFlag(WFLAGS_HIGH_ENUM flag) {
             return (WFLAGS_HIGH_ENUM)(Fields.m_dwFlags & (uint)flag);
         }
@@ -283,8 +324,16 @@ namespace DotNetPatcher {
             return result.ToArray();
         }
 
+        static byte[] MULTIPURPOSE_SLOT_OFFSET_4(int mask) {
+            List<byte> result = new List<byte>();
+            result.AddRange(MULTIPURPOSE_SLOT_OFFSET_3(mask));
+            result.AddRange(MULTIPURPOSE_SLOT_OFFSET_3(mask | 0x08));
+            return result.ToArray();
+        }
+
         static byte[] c_NonVirtualSlotsOffsets = MULTIPURPOSE_SLOT_OFFSET_3(0);
 
+        static byte[] c_ModuleOverrideOffsets = MULTIPURPOSE_SLOT_OFFSET_4(0);
 
         public IntPtr GetNonVirtualSlotsPtr() {
             
